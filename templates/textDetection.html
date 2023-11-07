@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset='UTF-8'>
+    <meta name="viewport" content = "width=device-width,initial-scale=1.0">
+    <title>Verification Results</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .text{
+            text-align:center;}
+        .image-container {
+            display: flex; 
+            flex-wrap: wrap;
+            justify-content: space-between;
+        }
+
+        .image-card {
+            text-align: center; 
+            margin-bottom: 10px;
+        }
+
+        .image-card img {
+            width: 200px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    {% if type=="match" %}
+        {% if process=="odo" %}
+            <h1 class="text"> Odometer Reading Verification  </h1>
+        {% else %}
+            <h1 class="text"> Object Detection Block Demo </h1>
+        {% endif %}
+        <div style="text-align: center; display: flex; flex-wrap: wrap;justify-content: center;" >
+            {% for file in fileList %}
+                <div>
+                    {% if process=="odo" %}
+                        <img src="{{url_for('static', filename= 'tempFolder/' + file)}}" alt="image" width=300 >
+                    {% else %}
+                        <img src="{{url_for('static', filename= 'tempFolder/' + file)}}" alt="image" width=200 >
+                    {% endif %}
+                    <p>{{file.split(".")[0]}}</p>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        {% if process=="odo" %}
+            <h1 class="text"> Odometer Reading Verification </h1>
+        {% else %}
+            <h1 class="text"> License Plate Verification </h1>
+        {% endif %}  
+        <div class="image-container">
+            {% for file in fileList %}
+            <div class="image-card">
+                <img src="{{url_for('static', filename= 'tempFolder/' + file)}}" alt="image">
+                <p>{{file.split(".")[0]}}</p>
+            </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+    
+    {% if type=="match" %}
+        <div >
+            <h2 class="text"> Results </h2>
+            {% for file,header in data %}
+            <h2 class="text"> {{ header }}</h2>
+            <div style="text-align: center; display: flex; flex-wrap: wrap;justify-content: center;">
+                {% if process=="odo" %}
+                    <img src="{{url_for('static', filename= 'tempFolder/cropped/' + file)}}" alt="image"  width=300>
+                {% else %}  
+                    <img src="{{url_for('static', filename= 'tempFolder/cropped/' + file)}}" alt="image"  width=600>
+                {% endif %}  
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div>
+            <h2 class="text"> Results </h2>
+            {% for file,header in data %}
+            <div class="image-card">
+                <img src="{{url_for('static', filename= 'tempFolder/cropped/' + file)}}" alt="image">
+                <p> {{ header }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+    <br>
+    <div class = "image-card">
+        <form action="/" method="post" enctype="multipart/form-data">
+            <input type="submit" value="Main Menu">
+        </form>
+    </div>
+</body>
+</html>

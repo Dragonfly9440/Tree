@@ -1,0 +1,17 @@
+body {
+    display: flex;
+    justify-content: center; /* Center horizontally */
+    align-items: center; /* Center vertically */
+    height: 100vh; /* Full viewport height */
+    margin: 0; /* Remove default body margin */
+}
+.container {
+    width: 300px; 
+    background-color: #f0f0f0;
+    padding: 20px;
+}
+
+.child {
+    display: block; 
+    margin-bottom: 20px; 
+}

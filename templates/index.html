@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset='UTF-8'>
+    <meta name="viewport" content = "width=device-width,initial-scale=1.0">
+    <title>Object Detection & Recognisition Demo</title>
+    <link rel="stylesheet" type = "text/css" href="/static/style.css">
+</head>
+<body>
+    <div class = "container">
+        <h1> Object Detection & Text Detection Block Demo </h1>
+
+        <div class = "child" >
+            <form action="/cnn" method="post" enctype="multipart/form-data">
+                <label for="image">Odometer Reading Detection:</label>
+                <input type="file" name="file" accept="image/*">
+                <input type="submit" value="Upload">
+            </form>
+        </div>
+        <!--
+        <div class = "child" >
+            <form action="/process" method="post" enctype="multipart/form-data">
+                <label for="image">Odometer Reading Detection:</label>
+                <input type="file" name="file" accept="image/*">
+                <input type="submit" value="Upload">
+            </form>
+        </div>
+        -->
+        <div class = "child">
+            <form action="/process2" method="post" enctype="multipart/form-data">
+                <label for="image">License Plate Detection:</label>
+                <input type="file" name="file" accept="image/*">
+                <input type="submit" value="Upload">
+            </form>
+        </div>
+        <div class = "child">
+            <form action="/process3" method="POST" enctype="multipart/form-data">
+            <label for="image1">Vehical Pannel Verification:</label>
+            <br></br>
+            <label for="image1">Image 1 (Present in Database):</label>
+            <input type="file" name="image1" accept="image/*" required><br><br>
+            
+            <label for="image2">Image 2 (Extracted from video sequence):</label>
+            <input type="file" name="image2" accept="image/*" required><br><br>
+            
+            <input type="submit" value="Upload Images">
+            </form>
+        </div>
+
+    </div>
+</body>
+</html>
