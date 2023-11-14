@@ -499,12 +499,14 @@ def serve_image(filename):
     return send_from_directory('static/tempFolder', filename)
 
 if __name__ == '__main__':
-    odometerReader = YOLO(r"C:\Users\sushantmahajan01\Documents\Project\flask_complete\models\runs_odo_area_and_digits\detect\train_300\weights\best.pt")
-    licensePlate = YOLO(r"C:\Users\sushantmahajan01\Documents\Project\flask_complete\models\licenseplateonly.pt")
-    odometerLocalization = YOLO(r"C:\Users\sushantmahajan01\Documents\Project\flask_complete\models\runs_odometer_localization\detect\train\weights\best.pt")
+    odometerReader = YOLO("/tree_low_milage/Tree/models/runs_odo_area_and_digits/detect/train_300/weights/best.pt")
+    licensePlate = YOLO("/tree_low_milage/Tree/models/licenseplateonly.pt")
+    odometerLocalization = YOLO("/tree_low_milage/Tree/models/runs_odometer_localization/detect/train/weights/best.pt")
     odometerLabelMap = {0:".",1:"0", 2:"1",3:"2", 4:"3",5:"4",6:"5",7:"6", 8:"7", 9:"8",10:"9", 11:"Alpha",12:"Odometer"}
     reader = easyocr.Reader(['en'])
     app.secret_key = 'super secret key'
     app.config['SESSION_TYPE'] = 'filesystem'
     app.debug = True
     app.run()
+
+    
