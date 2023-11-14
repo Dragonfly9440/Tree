@@ -17,30 +17,164 @@ import re
 app = Flask(__name__)
 app.config['TEMP_FOLDER'] = 'static/tempFolder'
 
-def run_yolo_model(model, img,folder_path,detectionThresh, modelType):
+def calculate_iou(box1, box2):
+    # Calculate the intersection coordinates
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+
+    # Calculate the area of the intersection
+    intersection_area = max(0, x2 - x1) * max(0, y2 - y1)
+
+    # Calculate the areas of the individual boxes
+    area_box1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area_box2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+
+    # Calculate the IoU
+    iou = intersection_area / (area_box1 + area_box2 - intersection_area)
+    
+    return iou
+
+def find_overlapping_boxes(boxes, iou_threshold):
+    overlapping_boxes = []
+
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            iou = calculate_iou(boxes[i], boxes[j])
+            if iou >= iou_threshold:
+                overlapping_boxes.append((i, j))
+
+    return overlapping_boxes
+
+def remove_overlapping_detections(detections,threshold):
+    #removing boxes for which iou is more that threshold %
+    removal_list =[]
+    overlapping_boxes = find_overlapping_boxes(detections, threshold)
+    for box in overlapping_boxes:
+        #check detection with highest confidence
+        box1 = detections[box[0]]
+        box2 = detections[box[1]]
+        if box1[4]<box2[4]:
+            removal_list.append(box1)
+        else:
+            removal_list.append(box2)
+    for i in removal_list:
+        if i in detections:
+            detections.remove(i)
+    return detections
+
+def run_odo_localization(model, img,folder_path):
     results = model(img)
     index = 0
     detectionsList = []
     cropped_image=None
     for detections in results[0].boxes.data.tolist():
-        if (int(detections[5])==0 and modelType=="localization") or  (int(detections[5])==12 and modelType=="detection"):
+        if int(detections[5])==0:
+            x1,y1,x2,y2,conf,objClass = detections
+            # Crop the image using the bounding box coordinates
+            detectionsList.append([x1,y1,x2,y2,conf,objClass])
+            cropped_image = img[int(y1):int(y2),int(x1):int(x2),:]
+            croppedFileName = folder_path + '/crop_localize' + str(index) + '.jpg' 
+            cv2.imwrite(croppedFileName , cropped_image)
+    return detectionsList
+
+def clear_folder(folder_path):
+    file_list = os.listdir(folder_path)
+    for file_name in file_list:
+        file_path = os.path.join(folder_path, file_name)
+        try:
+            if os.path.isfile(file_path): 
+                os.remove(file_path)
+                pass
+        except OSError as e:
+            print(f"Error deleting file: {e}")
+
+
+def run_odo_reading(model, img,folder_path,odometerLabelMap,double_detection_iou,chain_iou):
+    results = model(img)
+    #find overlapping boxes 
+    detections = results[0].boxes.data.tolist()
+    img_h,img_w,_ = img.shape
+    #multi detection case ? *******************************************
+    # removing odometer detection region
+    detections_excluding_odo = [det for det in detections if int(det[5])!=12 ]
+    odo_detection = [det for det in detections if int(det[5])==12 ]
+    index = 0
+    detectionsList = []
+    cropped_image=None
+    for detections in odo_detection:
+        if int(detections[5])==12:
             x1,y1,x2,y2,conf,objClass = detections
             meterType = objClass
             # Crop the image using the bounding box coordinates
-            if conf > detectionThresh:
-                detectionThresh = conf
-                detectionsList.append([x1,y1,x2,y2,conf,objClass])
-                cropped_image = img[int(y1):int(y2),int(x1):int(x2),:]
-                croppedFileName = folder_path + '/crop_{}'.format(modelType) + str(index) + '.jpg' 
-                angle = determine_text_region_angle(cropped_image)
-                print("Text Region Angle:", angle)
-                #cropped_image = rotate_image(cropped_image, angle)
-                cv2.imwrite(croppedFileName , cropped_image)
-        else:
-            x1,y1,x2,y2,conf,objClass = detections
             detectionsList.append([x1,y1,x2,y2,conf,objClass])
-    return detectionsList #output_queue.put(detectionsList)
-
+            cropped_image = img[int(y1):int(y2),int(x1):int(x2),:]
+            croppedFileName = folder_path + '/crop_detection' + str(index) + '.jpg' 
+            cv2.imwrite(croppedFileName , cropped_image)
+    
+    remainingDetections = remove_overlapping_detections(detections_excluding_odo,double_detection_iou)
+    newDetection = []
+    for ind,det in enumerate(remainingDetections):
+        x1,y1,x2,y2,p,c = det
+        width = x2-x1
+        # extending width of detection horizontally on both sides
+        x1_new= max(x1-width/4,0) 
+        x2_new=min(x2+width/4,img_w)
+        if int(c)==2:
+            x1_new = max(x1-1.5*width,0)
+            x2_new = min(x2+1.5*width,img_w)
+        # detection heights to be kept same 
+        y1_new= y1
+        y2_new = y2
+        newDetection.append([x1_new,y1_new,x2_new,y2_new,p,c])
+    # Find overlapping boxes
+    overlapping_boxes = find_overlapping_boxes(newDetection, chain_iou)
+    
+    # find the pairs of overlapping boxes
+    overlapping_chains =[]
+    temp_overlaps=overlapping_boxes.copy()
+    removeItems = []
+    for box in overlapping_boxes:
+        temp = [box[0],box[1]]
+        if removeItems:
+            for i in removeItems:
+                if i in temp_overlaps:
+                    temp_overlaps.remove(i)
+        for i in range(2):
+            for box2 in temp_overlaps:
+                if box2[0] in temp or box2[1] in temp:
+                    temp = temp+[box2[0],box2[1]]
+                    removeItems.append(box2)
+        if len(temp)==2 and temp[0]==box[0] and temp[1]==box[1]:
+            pass
+        else:
+            overlapping_chains.append(list(set(temp)))
+    for idx,chain in enumerate(overlapping_chains):
+        boxes = [remainingDetections[ind] for ind  in chain]
+        sorted_boxes = sorted(boxes, key=lambda box: box[0])
+        text = ""
+        x1_left_most=0.0
+        x2_right_most=0.0
+        y1_top_most=1000000
+        y2_bottom_most =0
+        avg_conf = 0
+        for ind,box in enumerate(sorted_boxes):
+            if ind==0:
+                x1_left_most = box[0]
+            if ind==len(sorted_boxes)-1:
+                x2_right_most = box[2]
+            if y1_top_most>box[1]:
+                y1_top_most = box[1]
+            if y2_bottom_most<box[3]:
+                y2_bottom_most= box[3]
+            text += odometerLabelMap[int(box[5])]
+            avg_conf +=box[4]
+        detectionsList.append([x1_left_most,y1_top_most,x2_right_most,y2_bottom_most,avg_conf/len(sorted_boxes),text])
+        cropped_image = img[int(y1_top_most):int(y2_bottom_most),int(x1_left_most):int(x2_right_most),:]
+        croppedFileName = folder_path + '/crop_detection_' + str(idx) + '.jpg' 
+        cv2.imwrite(croppedFileName , cropped_image)
+    return detectionsList
 
 def determine_text_region_angle(text_region):
     gray = cv2.cvtColor(text_region, cv2.COLOR_BGR2GRAY)
@@ -118,17 +252,7 @@ def show_image2():
                         bounding_boxes.append(temp)
 
             folder_path =  os.path.join(app.config['TEMP_FOLDER'], 'cropped')
-            file_list = os.listdir(folder_path)
-            
-            for file_name in file_list:
-                file_path = os.path.join(folder_path, file_name)
-                
-                try:
-                    if os.path.isfile(file_path): 
-                        os.remove(file_path)
-                        pass
-                except OSError as e:
-                    print(f"Error deleting file: {e}")
+            clear_folder(folder_path)
             index = 0
             detectionConfidence = []
             detectionThresh = 0.50
@@ -222,29 +346,19 @@ def yolo():
             filename = os.path.join(app.config['TEMP_FOLDER'], "Captured_Odometer.jpg")
             filenameList.append('Captured_Odometer.jpg')
             file.save(filename)
-
             img = cv2.imread(filename)
 
             # Get the bounding boxes of the detected objects
             folder_path =  os.path.join(app.config['TEMP_FOLDER'], 'cropped')
-            file_list = os.listdir(folder_path)
-            
-            for file_name in file_list:
-                file_path = os.path.join(folder_path, file_name)
-                
-                try:
-                    if os.path.isfile(file_path): 
-                        os.remove(file_path)
-                        pass
-                except OSError as e:
-                    print(f"Error deleting file: {e}")
-
-            boxes1 = run_yolo_model(odometerLocalization, img,folder_path, 0.50, "localization")
-
-                    
-            image_files = [f for f in os.listdir(folder_path) if f.endswith(('.jpg', '.jpeg')) ]#and ("thresholded_" in f)]
+            clear_folder(folder_path)
+            # Create two processes to run the YOLO models in parallel
+            boxes1 = run_odo_localization(odometerLocalization, img,folder_path)
+            boxes2 = run_odo_reading(odometerReader, img,folder_path,odometerLabelMap,0.4,0.01)
+            print(boxes2)
+            image_files = [f for f in os.listdir(folder_path) if f.endswith(('.jpg', '.jpeg')) and "localize" in f]
             response = {"dataAttached":{"fileList":[],
                                         "ocrReading":[]}}
+            
             for ind,filename in enumerate(image_files):
                 file_path = os.path.join(folder_path, filename)
                 image = cv2.imread(file_path)
@@ -272,6 +386,7 @@ def yolo():
             return render_template('textDetection.html', fileList=filenameList,data=mapped,type="match",process="odo")
         
         return "Invalid file type"
+
 
 def compare_images(image1_path, image2_path):
     image1 = cv2.imread(image1_path, cv2.IMREAD_GRAYSCALE)
@@ -384,10 +499,10 @@ def serve_image(filename):
     return send_from_directory('static/tempFolder', filename)
 
 if __name__ == '__main__':
-    odometerReader = YOLO(r"D:\Tree Insurance\flask app\data\runs_odo_area_and_digits\detect\train_100\weights\best.pt")
-    licensePlate = YOLO(r"D:\Tree Insurance\flask app\data\licenseplateonly.pt")
-    odometerLocalization = YOLO(r"D:\Tree Insurance\flask app\data\runs_odometer_localization\detect\train\weights\best.pt")
-    #odometerLocalization = YOLO(r"D:\Tree Insurance\flask app\data\runs_odometer_localization_20_on_dig\detect\train\weights\best.pt")
+    odometerReader = YOLO(r"C:\Users\sushantmahajan01\Documents\Project\flask_complete\models\runs_odo_area_and_digits\detect\train_300\weights\best.pt")
+    licensePlate = YOLO(r"C:\Users\sushantmahajan01\Documents\Project\flask_complete\models\licenseplateonly.pt")
+    odometerLocalization = YOLO(r"C:\Users\sushantmahajan01\Documents\Project\flask_complete\models\runs_odometer_localization\detect\train\weights\best.pt")
+    odometerLabelMap = {0:".",1:"0", 2:"1",3:"2", 4:"3",5:"4",6:"5",7:"6", 8:"7", 9:"8",10:"9", 11:"Alpha",12:"Odometer"}
     reader = easyocr.Reader(['en'])
     app.secret_key = 'super secret key'
     app.config['SESSION_TYPE'] = 'filesystem'
